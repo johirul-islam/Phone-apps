@@ -1,0 +1,827 @@
+<!DOCTYPE html> 
+<html>
+<head>
+<meta charset="utf-8">
+<title>jQuery Mobile Web App</title>
+<link href="jquery-mobile/jquery.mobile-1.0a3.min.css" rel="stylesheet" type="text/css"/>
+<script src="jquery-mobile/jquery-1.5.min.js" type="text/javascript"></script>
+<script src="jquery-mobile/jquery.mobile-1.0a3.min.js" type="text/javascript"></script>
+<!-- alarm -->
+		<script type="text/javascript" src="libs/js/jquery.colorpicker.js"></script>       
+		<script type="text/javascript" src="libs/js/jquery-1.3.2.min.js"></script>
+		<script type="text/javascript" src="libs/js/jquery.jplayer.js"></script>		
+		<script type="text/javascript" src="libs/js/jquery-ui-1.7.2.custom.min.js"></script>
+
+<!-- alarm end -->
+
+<!-- This reference to cordova.js will allow for code hints as long as the current site has been configured as a mobile application. 
+	 To configure the site as a mobile application, go to Site -> Mobile Applications -> Configure Application Framework... -->
+<script src="/cordova.js" type="text/javascript"></script>
+
+
+<!-- Set alam script -->
+
+<script type="text/javascript">
+<!-- 
+$(function()
+{
+/*Defines*/
+	var cookieToken = "|^|";
+	
+	var alarmDate = [];
+	var alarmTone = [];
+	var alarmCounter = 0;
+
+	/*write a cookie based on the arguments*/
+	/*saveCookie(str,str,int)*/
+	$.fn.saveCookie = function(cookieName,cookieData,cookieNumOfDays)
+	{
+	  var exdate=new Date();	
+	  exdate.setDate(exdate.getDate()+(cookieNumOfDays)); 
+	  document.cookie=cookieName+"=" +escape(cookieData)+";expires="+exdate.toGMTString();
+	  //alert(cookieName+"="+cookieData);
+	}
+	
+	/*loads a cookie by name, splits it by the token, and returns an array of values*/
+	/*loadCookie(str)*/
+	$.fn.loadCookie = function(cookieName)
+	{
+	if (document.cookie.length>0)
+	  {
+	  cookieStart=document.cookie.indexOf(cookieName + "=");
+	  if (cookieStart!=-1)
+		{
+		cookieStart=cookieStart + cookieName.length+1;
+		cookieEnd=document.cookie.indexOf(";",cookieStart);
+		if (cookieEnd==-1) cookieEnd=document.cookie.length;
+		return unescape(document.cookie.substring(cookieStart,cookieEnd)).split(cookieToken);
+		}
+	  }
+	  return null;
+	}
+	
+	$.fn.fixDate = function(timeStamp,daysToAdd)
+	{
+	 var alarmDate = new Date();
+	 var currentDate = new Date();
+
+	/*parse the string to a date*/
+	alarmDate.setTime(Date.parse(timeStamp));	  	
+    /*include the days to advance the alarm date*/
+	alarmDate.setDate(alarmDate.getDate()+daysToAdd);  
+	
+	if(currentDate > alarmDate)
+	 {
+		/*if the loaded alarm date is older than today, take the time and apply it to today*/
+		currentDate.setHours(alarmDate.getHours(),alarmDate.getMinutes(),00);
+		timeStamp = currentDate;
+	 }
+	else
+	 {
+		timeStamp = alarmDate;					 
+	 }	 
+	 return timeStamp;
+	}	
+	
+	/*formats a date object to either 24hr or 12hr format based on the second argument*/
+	/*makeTimeStr(Date,bool)*/
+	$.fn.makeTimeStr = function(dateObj,format12)
+	{
+	  var hours = dateObj.getHours();
+	  var minutes = dateObj.getMinutes();
+	  var seconds = dateObj.getSeconds();
+	  var format ="";
+	
+	  // Convert an hours component of "0" to "12"
+	  if(format12 == true)
+	   {
+		 format = ( hours >= 12 ) ? "PM" : "AM";   
+		 hours = (hours == 0) ? 12 : hours;		 
+		 hours = ( hours > 12 ) ? hours - 12 : hours;	   
+	   }
+	   	 
+	  minutes = (minutes < 10 ? "0" : "") + minutes;
+	  seconds = (seconds < 10 ? "0" : "") + seconds;
+	  hours = (hours < 10 ? "0" : "") + hours;
+	     
+	  // Compose the string for display
+	  var timeString = hours + ":" + minutes + ":" + seconds + " " +format;
+	  return timeString;
+	}
+	
+	/*remove alarm from arrays, remove the UI element, hide group if no alarms are left*/
+	/*removeAlerm(int)*/
+	$.fn.removeAlarm = function(index)
+	{
+		alarmTone[index] = null;
+		alarmDate[index] = null;
+		$("#alarm"+index).remove();	
+		
+		if($("#alarmList").children().size() < 1)
+		 {
+		   $("#alarmGroup").hide();
+		 }
+	}
+	
+	/*changes which form elements are shown, based on input*/
+	/*alarmFormSet(bool)*/
+	$.fn.alarmFormSet = function(formatFlag)
+	{
+		if(formatFlag)
+		{
+		  $("#standardFormat").show();
+		  $("#militaryFormat").hide();
+		}
+		else
+		{
+		  $("#militaryFormat").show();
+		  $("#standardFormat").hide();   
+		}
+	
+	}
+	
+	/*add alarm elements to UI*/
+	/*addAlarm(int)*/
+	$.fn.addAlarmUI = function(alarmId)
+	{
+	   $("#alarmList").append("<div id='alarm"+alarmId+"'><a href='#' id='alarmRemove"+alarmId+"'><img src='images/remove.png' alt='Remove Alarm' border='0'/></a> <span>"+$.fn.makeTimeStr(alarmDate[alarmId],$("#12hourFormat").is(':checked'))+"</span></div>");
+	   //bind the remove function to the newly created elements
+	   $("#alarmRemove"+alarmId).bind("click", {index:alarmId}, function(e){
+	   //suppress click action
+	   e.preventDefault();
+	   //call remove alarm
+	   $.fn.removeAlarm(e.data.index); 	 
+		});   		  	
+	   $("#alarmGroup").css("display","inline"); 
+	}
+	
+	/*Handles the updating of the clock and all things done on interval*/
+	$.fn.updateClock = function()
+	{
+	  var currentTime = new Date();
+	  
+		for(i=0;i<alarmDate.length;i++)
+		 {
+		  if(alarmDate[i] != null)
+		  {	 
+		   //make sure date object is updated to today;		   
+		    alarmDate[i] = $.fn.fixDate(alarmDate[i],0);
+		   //get the milisecond time stamps, then round it down to seconds for comparision 			
+			 if((parseInt(alarmDate[i].getTime()/1000,10) == parseInt(currentTime.getTime()/1000,10)))
+			  {		 
+				 if(alarmTone[i] != null)
+				  {	 
+					//play the alarm
+					$("#jquery_jplayer").setFile(alarmTone[i]).play(); 
+				  }
+				 else
+				  {
+					//trigger silent alarm
+				  } 
+				 //show the dialog
+				  if($("#dialog").isOpen != true)
+				   {
+						$("#dialog").dialog('open');
+				   }
+				  //line through alarms already triggered 
+				 $("#alarm"+i).css('text-decoration','line-through');
+				 				 
+				 //update already triggered alarm to the next day, so that if they leave the window open the alarm will sound without refresh
+				 alarmDate[i] = $.fn.fixDate(alarmDate[i],1);
+
+			  }
+			
+		  }
+		 }
+					 	  
+	  var currentTimeString = $.fn.makeTimeStr(currentTime,$("#12hourFormat").is(':checked'));
+	  $("#clock").text(currentTimeString);
+
+	  }
+	  
+	 /*Loads options from cookies, and applies them to their given area.*/ 
+	$.fn.loadOptions = function()
+	 {
+ 	   var fontSize = $.fn.loadCookie("fontSize");
+	   var formatFlag = $.fn.loadCookie("Format");
+	   //var alarmFade = $.fn.loadCookie("alarmFade");
+
+		
+		/*
+	   if(alarmFade == "true")
+	    {
+		 $("#alarmFade").attr('checked','checked'); 
+		}
+	   else
+	    {
+		 $("#alarmFade").removeAttr('checked'); 
+		}			
+		*/
+		
+	   if(formatFlag == "true")/*using quotes because of boolean conversion issues from string*/
+	    {
+		 $("#12hourFormat").attr('checked','checked'); 
+		}
+	   else
+	    {
+		 $("#12hourFormat").removeAttr('checked'); 
+		}	
+		
+	   $("#clockSize option[value='"+fontSize+"']").attr('selected', 'selected');
+	   $("#clock").css('font-size', fontSize+'em');
+	 }  
+	  
+	/*primer function used to set up data before the application runs*/	
+	$.fn.primer = function()
+	{	
+		/*load cookie data*/
+		alarmTone = $.fn.loadCookie("Tones");
+		alarmDate = $.fn.loadCookie("Dates");
+	    $.fn.loadOptions();
+		
+		$("#customMp3File").hide();
+		
+		if(alarmDate != null && alarmDate != "")
+		 {
+			for(i=0;i<alarmDate.length;i++)
+			 {
+			  if(alarmDate[i] != null && alarmDate[i] !="")
+			   {
+				  /*cookies are loaded data as strings, this fixes it.*/
+				  if(typeof(alarmDate[i]).toLowerCase() == "string")
+				   {
+					alarmDate[i] = $.fn.fixDate(alarmDate[i],0);
+				   }			   
+				$.fn.addAlarmUI(i);
+			   }
+   				alarmCounter = alarmDate.length-1;
+			 }			 
+		 }
+		else
+		 {
+		  	alarmDate = [];
+			alarmTone = [];
+		 } 
+		
+		//alarmCounter++;
+		
+		/*based on the users choice, change what date format form elements are shown*/
+		$.fn.alarmFormSet($("#12hourFormat").is(':checked'));
+		
+		/*set the the clock up*/
+		$.fn.updateClock();
+	}
+	
+/*Events*/
+	$("#clockSize").change(function()
+	 {
+	   $("#clock").css('font-size', $("#clockSize option:selected").val()+'em');
+	 });
+
+	$("#mp3File").change(function() 
+	 {
+	   $("#customMp3File").val("");
+	   if($("#mp3File option:selected").val() =="custom")
+	    {
+		  $("#customMp3File").show();
+		}
+	   else
+		{
+	      $("#customMp3File").hide();
+		}
+	 });
+	 
+	$("#saveAlarms").click(function() 
+	{ 
+	  if(alarmDate.length > 0)
+	   {
+	  var tmpDate = alarmDate;
+	  var tmpTone = alarmTone;
+	  /*goes through and looks for nulled values and removes them before saving.*/	  
+	  for(i=0;i<tmpDate.length;i++)
+	   {
+	    if(tmpDate[i] == null)
+		 {
+		  tmpDate.splice(i,1);
+		  tmpTone.splice(i,1);
+		 }
+	   }
+	  /*create 2 10 year long cookies, one containing the tones for the alarm the others the dates*/	   
+	  $.fn.saveCookie("Tones",tmpTone.join(cookieToken),3650);
+	  $.fn.saveCookie("Dates",tmpDate.join(cookieToken),3650);
+	  }
+	 else
+	  {
+	   /*Removes the cookies if there is nothing to save*/
+	  $.fn.saveCookie("Tones","",-1);
+	  $.fn.saveCookie("Dates","",-1);	   
+	  } 
+	});
+
+	$("#jquery_jplayer").jPlayer(
+	{
+	  oggSupport: false,
+	  volume: 100,
+	  swfPath: "http://bruceburge.com/utilities/libs/js/"
+	})
+
+	.onSoundComplete( function() 
+	{
+	  $(this).play(); /*repeat*/
+	});
+
+	$("#accordion").accordion(
+	 {
+	  collapsible: true,
+	  autoHeight: false
+	 });
+
+	$("#dialog").dialog(
+	  {
+		bgiframe: true,
+		modal: true,
+		stack: true,
+		autoOpen: false,
+		buttons: 
+		{
+		  Ok: function(){
+		  $(this).dialog('close');
+		  //start fader here
+		  }
+		},
+		close: function(){
+		$("#jquery_jplayer").stop(); 
+		//stop fader here
+		}
+	  });
+
+	$("#12hourFormat").change( function()
+	{	
+		//based on the checkbox show or hide the fields
+		$.fn.alarmFormSet($(this).is(':checked'));			
+		//rewrite, the alarms, and reformat the string with, current time format
+		for(i=0;i<alarmDate.length;i++)
+		 {
+		  if(alarmDate[i] != null)
+		   {
+			$("#alarmRemove"+i+" + span").text($.fn.makeTimeStr(alarmDate[i],$(this).is(':checked')));
+		   }	
+		 }
+	});
+	
+	$("#previewAlarm").click(function()
+	 {
+	 	if($(this).val() == "Preview Alarm")
+		 {
+		   if($("#mp3File option:selected").val() =="none")
+			{
+			   /*silent alarm do nothing*/
+			}
+		   else if($("#mp3File option:selected").val() =="custom")
+			{
+			  if($("#customMp3File").val().length > 0)
+			   {/*do better validation here later*/
+				$("#jquery_jplayer").setFile($("#customMp3File").val()).play();
+			   }
+			  else
+			   {
+				 /*custom selected but not file*/
+			   }
+			}
+		   else
+			{
+			   var tmpTone = "http://bruceburge.com/utilities/alarm/mp3/"+$("#mp3File option:selected").val();
+			   $("#jquery_jplayer").setFile(tmpTone).play();
+			}
+		   $(this).val("Stop Preview");
+		 }
+		else
+		 {
+   		   $(this).val("Preview Alarm");
+		   $("#jquery_jplayer").stop();
+		 }
+	 });
+
+	$("#saveSettings").click(function()
+	{
+		  $.fn.saveCookie("Format",$("#12hourFormat").is(':checked'),3650);
+		  //$.fn.saveCookie("Fade",$("#alarmFade").is(':checked'),3650);
+		  $.fn.saveCookie("fontSize",$("#clockSize option:selected").val(),3650);		  
+	});
+	
+	$("#addAlarm").click(function()
+	{
+		var timeMod = 0;
+		var hrs = 0;
+		var mins = 0;
+		var formatFlag = $("#12hourFormat").is(':checked');
+		alarmDate[alarmCounter] = new Date();
+			
+		if(formatFlag)
+		{
+		//if pm is selected add 12 to the hour
+		timeMod = ($("select[name$='amPm']").val() == 1)?12:0;
+		}
+		hrs = parseInt($("select[name='hour"+formatFlag+"']").val(),10)+timeMod;
+		mins = parseInt($("select[name='minute"+formatFlag+"']").val(),10);
+		
+		alarmDate[alarmCounter].setHours(hrs,mins,00);	  
+		$("#alarmGroup").css("display","inline");
+		
+
+	   if($("#mp3File option:selected").val() =="none")
+		{
+		   alarmTone[alarmCounter] = null;					
+		}
+	   else if($("#mp3File option:selected").val() =="custom")
+		{
+		  if($("#customMp3File").val().length > 0)
+		   {/*do better validation here later*/
+		     alarmTone[alarmCounter] = $("#customMp3File").val();
+		   }
+          else
+		   {
+		     alarmTone[alarmCounter] = null
+		   }
+		}
+	   else
+		{
+		   alarmTone[alarmCounter] = "http://bruceburge.com/utilities/alarm/mp3/"+$("#mp3File option:selected").val();
+		}
+
+		
+		$.fn.addAlarmUI(alarmCounter);
+		alarmCounter++;
+	});
+
+
+/*first calls to start the application*/	
+$.fn.primer();
+/*start the the timer, and run the updateClock function every second*/
+setInterval("$(this).updateClock()",1000);
+});
+// -->
+</script>
+
+
+
+
+<!-- alert set end -->
+
+
+</head> 
+<body> 
+
+<div data-role="page" id="page">
+	<div data-role="header">
+		<h1>Page One</h1>
+	</div>
+	<div data-role="content">	
+		<ul data-role="listview">
+			<li><a href="#page2">Page Two</a></li>
+            <li><a href="#page3">Page Three</a></li>
+			<li><a href="#page4">Page Four</a></li>
+		</ul>		
+	</div>
+	<div data-role="footer">
+		<h4>Page Footer</h4>
+	</div>
+</div>
+
+<div data-role="page" id="page2">
+	<div data-role="header">
+		<h1>Page Two</h1>
+	</div>
+	<div style="width:auto;" data-role="content">	
+		
+        <!-- mail content -->
+        
+        
+        
+        
+        
+        
+        
+        
+        <div id="wrapper" class="centerdiv">
+	<div id="clockFrame">
+	<div id="clock"></div>
+	</div>
+	<div id="player">
+	<div id="jquery_jplayer"></div>
+	</div>
+
+	<div id="accordion" style="width:95%;" class="centerdiv">
+		<h3><a href="#">Set Alarms</a></h3>
+		<div>
+		  <div class="form-container ui-helper-clearfix ui-corner-all">
+		  <form>
+		  <p align="center">Alarm Time:</p>
+		<div id="militaryFormat" align="center">		  		  
+		  <select name="hourfalse" style="float:inherit; width:20%;">
+          <option value="0" style="width:20%;">Hours</option>
+		  <option value="0" style="width:20%;">00</option>
+		  <option value="1" style="width:20%;">01</option>
+		  <option value="2" style="width:20%;">02</option>
+		  <option value="3" style="width:20%;">03</option>
+		  <option value="4" style="width:20%;">04</option>
+		  <option value="5" style="width:20%;">05</option>
+		  <option value="6" style="width:20%;">06</option>
+		  <option value="7" style="width:20%;">07</option>
+		  <option value="8" style="width:20%;">08</option>
+		  <option value="9" style="width:20%;">09</option>
+		  <option value="10" style="width:20%;">10</option>
+		  <option value="11" style="width:20%;">11</option>
+		  <option value="12" style="width:20%;">12</option>
+		  <option value="13" style="width:20%;">13</option>
+		  <option value="14" style="width:20%;">14</option>
+		  <option value="15" style="width:20%;">15</option>
+		  <option value="16" style="width:20%;">16</option>
+		  <option value="17" style="width:20%;">17</option>
+		  <option value="18" style="width:20%;">18</option>
+		  <option value="19" style="width:20%;">19</option>
+		  <option value="20" style="width:20%;">20</option>
+		  <option value="21" style="width:20%;">21</option>
+		  <option value="22" style="width:20%;">22</option>
+		  <option value="23" style="width:20%;">23</option>
+		  </select>
+		  :
+		  <select style="width:20%; float:inherit;" name="minutefalse">
+          <option>Minutes</option>
+		  <option value="0" style="width:20%;">00</option>
+		  <option value="1" style="width:20%;" >01</option>
+		  <option value="2" style="width:20%;">02</option>
+		  <option value="3" style="width:20%;">03</option>
+		  <option value="4" style="width:20%;">04</option>
+		  <option value="5" style="width:20%;">05</option>
+		  <option value="6" style="width:20%;">06</option>
+		  <option value="7" style="width:20%;">07</option>
+		  <option value="8" style="width:20%;">08</option>
+		  <option value="9" style="width:20%;">09</option>
+		  <option value="10" style="width:20%;">10</option>
+		  <option value="11" style="width:20%;">11</option>
+		  <option value="12" style="width:20%;">12</option>
+		  <option value="13" style="width:20%;">13</option>
+		  <option value="14" style="width:20%;">14</option>
+		  <option value="15" style="width:20%;">15</option>
+		  <option value="16" style="width:20%;">16</option>
+		  <option value="17" style="width:20%;">17</option>
+		  <option value="18" style="width:20%;">18</option>
+		  <option value="19" style="width:20%;">19</option>
+		  <option value="20" style="width:20%;">20</option>
+		  <option value="21" style="width:20%;">21</option>
+		  <option value="22" style="width:20%;">22</option>
+		  <option value="23" style="width:20%;">23</option>
+		  <option value="24" style="width:20%;">24</option>
+		  <option value="25" style="width:20%;">25</option>
+		  <option value="26" style="width:20%;">26</option>
+		  <option value="27" style="width:20%;">27</option>
+		  <option value="28" style="width:20%;">28</option>
+		  <option value="29" style="width:20%;">29</option>
+		  <option value="30" style="width:20%;">30</option>
+		  <option value="31" style="width:20%;">31</option>
+		  <option value="32" style="width:20%;">32</option>
+		  <option value="33" style="width:20%;">33</option>
+		  <option value="34" style="width:20%;">34</option>
+		  <option value="35" style="width:20%;">35</option>
+		  <option value="36" style="width:20%;">36</option>
+		  <option value="37" style="width:20%;">37</option>
+		  <option value="38" style="width:20%;">38</option>
+		  <option value="39" style="width:20%;">39</option>
+		  <option value="40" style="width:20%;">40</option>
+		  <option value="41" style="width:20%;">41</option>
+		  <option value="42" style="width:20%;">42</option>
+		  <option value="43" style="width:20%;">43</option>
+		  <option value="44" style="width:20%;">44</option>
+		  <option value="45" style="width:20%;">45</option>
+		  <option value="46" style="width:20%;">46</option>
+		  <option value="47" style="width:20%;">47</option>
+		  <option value="48" style="width:20%;">48</option>
+		  <option value="49" style="width:20%;">49</option>
+		  <option value="50" style="width:20%;">50</option>
+		  <option value="51" style="width:20%;">51</option>
+		  <option value="52" style="width:20%;">52</option>
+		  <option value="53" style="width:20%;">53</option>
+		  <option value="54" style="width:20%;">54</option>
+		  <option value="55" style="width:20%;">55</option>
+		  <option value="56" style="width:20%;">56</option>
+		  <option value="57" style="width:20%;">57</option>
+		  <option value="58" style="width:20%;">58</option>
+		  <option value="59" style="width:20%;">59</option>
+		  </select><br />
+</div>
+<div align="center" id="standardFormat">
+		  <select name="hourtrue">
+		  <option value="0" >12</option>		  
+		  <option value="1" >01</option>
+		  <option value="2" >02</option>
+		  <option value="3" >03</option>
+		  <option value="4" >04</option>
+		  <option value="5" >05</option>
+		  <option value="6" >06</option>
+		  <option value="7" >07</option>
+		  <option value="8" >08</option>
+		  <option value="9" >09</option>
+		  <option value="10" >10</option>
+		  <option value="11" >11</option>		 
+		  </select>
+		  :
+		  <select name="minutetrue">
+		  <option value="0" >00</option>
+		  <option value="1" >01</option>
+		  <option value="2" >02</option>
+		  <option value="3" >03</option>
+		  <option value="4" >04</option>
+		  <option value="5" >05</option>
+		  <option value="6" >06</option>
+		  <option value="7" >07</option>
+		  <option value="8" >08</option>
+		  <option value="9" >09</option>
+		  <option value="10" >10</option>
+		  <option value="11" >11</option>
+		  <option value="12" >12</option>
+		  <option value="13" >13</option>
+		  <option value="14" >14</option>
+		  <option value="15" >15</option>
+		  <option value="16" >16</option>
+		  <option value="17" >17</option>
+		  <option value="18" >18</option>
+		  <option value="19" >19</option>
+		  <option value="20" >20</option>
+		  <option value="21" >21</option>
+		  <option value="22" >22</option>
+		  <option value="23" >23</option>
+		  <option value="24" >24</option>
+		  <option value="25" >25</option>
+		  <option value="26" >26</option>
+		  <option value="27" >27</option>
+		  <option value="28" >28</option>
+		  <option value="29" >29</option>
+		  <option value="30" >30</option>
+		  <option value="31" >31</option>
+		  <option value="32" >32</option>
+		  <option value="33" >33</option>
+		  <option value="34" >34</option>
+		  <option value="35" >35</option>
+		  <option value="36" >36</option>
+		  <option value="37" >37</option>
+		  <option value="38" >38</option>
+		  <option value="39" >39</option>
+		  <option value="40" >40</option>
+		  <option value="41" >41</option>
+		  <option value="42" >42</option>
+		  <option value="43" >43</option>
+		  <option value="44" >44</option>
+		  <option value="45" >45</option>
+		  <option value="46" >46</option>
+		  <option value="47" >47</option>
+		  <option value="48" >48</option>
+		  <option value="49" >49</option>
+		  <option value="50" >50</option>
+		  <option value="51" >51</option>
+		  <option value="52" >52</option>
+		  <option value="53" >53</option>
+		  <option value="54" >54</option>
+		  <option value="55" >55</option>
+		  <option value="56" >56</option>
+		  <option value="57" >57</option>
+		  <option value="58" >58</option>
+		  <option value="59" >59</option>
+		  </select>
+		  &nbsp;
+		  <select name="amPm">
+		  <option value="0">AM</option>
+		  <option value="1">PM</option>
+		  </select>
+		  <br />
+</div>		  
+		  <table width="auto">
+		   <tr>
+			<td colspan="3">Alarm Tone: (mp3 only)</td>
+		   </tr>
+		   <tr>
+			<td colspan="3" align="left">Select from list</td> 
+            <!--
+			<td align="center"> or </td>
+			<td align="right">Use your own URL</td>
+            -->
+		   </tr>
+		   <tr>
+			<td width="90">
+		  <select id="mp3File">
+		  <option value="none" selected="selected">None</option>
+		  <option value="carterattack.mp3">Carter attack</option>
+		  <option value="chant.mp3">Chant</option>
+		  <option value="PhoneRinging.mp3">Phone Ringing</option>
+		  <option value="Radetzkimarsch.mp3">Radetzkimarsch</option>
+		  <option value="ShortWAve.mp3">ShortWAve</option>
+		  <option value="siren.mp3">Siren</option>
+		  <option value="custom">Custom</option>          
+		  </select>
+          	</td>
+			<td width="1">&nbsp;</td>
+			<td width="90"><input type="text" id="customMp3File" /></td>
+		   </tr>
+		  </table>
+		  <input class="ui-state-default ui-corner-all a" type="button" value="Preview Alarm" name="previeAlarm" id="previewAlarm" /><hr>          
+		  <input class="ui-state-default ui-corner-all a" type="button" value="Add an Alarm" name="addAlarm" id="addAlarm" />&nbsp;
+		  <input class="ui-state-default ui-corner-all a" type="button" value="Save Alarms" name="saveAlarms" id="saveAlarms" />
+		  </form>
+		  </div>
+		  <div id="alarmGroup">
+		  Alarms:<br />
+				  <div id="alarmList" class="form-container ui-helper-clearfix ui-corner-all"></div>
+		  </div>	  
+		</div>
+				<h3><a href="#">Set Options</a></h3>
+				<div>
+					<div class="form-container ui-helper-clearfix ui-corner-all">                    
+					<form>
+                    <table>
+                    <tr>
+                    <td>
+                      12 hour format
+                    </td>                    
+                    <td>
+                      <input id="12hourFormat" type="checkbox"/>
+                    </td>
+                    </tr>
+                    <tr>
+                    <td>
+                      Clock font size
+                    </td>                    
+                    <td>  
+                    <select id="clockSize">
+                    <option value="4.5">04.5em</option>
+                    <option value="5.5">05.5em</option>
+                    <option value="6.5">06.5em</option>
+                    <option value="7.5">07.5em</option>                                        
+                    <option value="8.5" selected="selected">08.5em</option>                    
+                    <option value="9.5">09.5em</option>
+                    <option value="10.5">10.5em</option>
+                    <option value="11.5">11.5em</option>
+                    <option value="12.5">12.5em</option>                    
+                    </select>
+                    </td>
+                    </tr>
+                    </table>
+                    <hr />
+                 	<input class="ui-state-default ui-corner-all a" type="button" value="Save Settings" name="saveSettings" id="saveSettings"/>  
+					</form>
+					</div>
+	  </div>
+	</div>
+	<div id="dialog" title="Turn Off Alarm?">
+		<p><span class="ui-icon ui-icon-alert" style="float:left; margin:0 7px 20px 0;"></span>Click Ok to turn off alarm</p>
+	</div>
+</div>
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        <!-- Main alarm content terminate -->
+        
+        
+        
+        
+        
+	</div>
+	<div data-role="footer">
+		<h4>Page Footer</h4>
+	</div>
+</div>
+
+<div data-role="page" id="page3">
+	<div data-role="header">
+		<h1>Page Three</h1>
+	</div>
+	<div data-role="content">	
+		Content		
+	</div>
+	<div data-role="footer">
+		<h4>Page Footer</h4>
+	</div>
+</div>
+
+<div data-role="page" id="page4">
+	<div data-role="header">
+		<h1>Page Four</h1>
+	</div>
+	<div data-role="content">	
+		Content		
+	</div>
+	<div data-role="footer">
+		<h4>Page Footer</h4>
+	</div>
+</div>
+
+</body>
+</html>
